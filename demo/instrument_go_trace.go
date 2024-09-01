@@ -6,7 +6,7 @@ import (
 	"runtime/trace"
 )
 
-// ProcessFunc instrumentation function example using go trace
+// InstrumentGoTrace instrumentation function example using go trace
 // usage: find . -name "*.go"|grep -vE "test|example"|xargs -I {} go-instrument-tool -source={} -replace -patches=xxx/demo/instrument_go_trace.go
 func InstrumentGoTrace(spanName string, hasCtx bool, ctx gonativectx.Context, args ...interface{}) {
 	fctx := gonativectx.TODO()

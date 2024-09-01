@@ -261,7 +261,7 @@ func createPatchCtxDefStmt(source, patchFunc *ast.FuncDecl) *ast.AssignStmt {
 		ctxAssignStmt.Rhs = []ast.Expr{
 			&ast.CallExpr{
 				Fun: &ast.SelectorExpr{
-					X:   ast.NewIdent("context"),
+					X:   ast.NewIdent("gonativectx"),
 					Sel: ast.NewIdent("Background"),
 				},
 			},
@@ -293,7 +293,9 @@ func createArgsDefStmt(source, patchFunc *ast.FuncDecl) *ast.AssignStmt {
 		Rhs: []ast.Expr{
 			&ast.CompositeLit{
 				Type: &ast.ArrayType{
-					Elt: ast.NewIdent("any"),
+					Elt: &ast.InterfaceType{
+						Methods: &ast.FieldList{},
+					},
 				},
 				Elts: elts,
 			},
@@ -332,7 +334,7 @@ func rewriteSourceFunc(spanName string, source, patchFunc *ast.FuncDecl) error {
 	// 		   hasCtxSuffix := true
 	// 	else hasCtxSuffix = false
 	// 	argsSuffix := []interface{}{ctx, args...}
-	// 	ProcessFunc(spanName string, hasCtx bool, ctx context.Context, args ...any)
+	// 	ProcessFunc(spanName string, hasCtx bool, ctx context.Context, args ...interface{})
 	// generate init part
 	initStmts := make([]ast.Stmt, 0, 4)
 	// always add span stmt
