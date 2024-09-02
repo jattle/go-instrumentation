@@ -4,12 +4,90 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/format"
+	"go/printer"
 	"go/token"
+	"sort"
 )
 
-// RewriteSourceFile for every patch file, patch instrumenter func to source file
-func RewriteSourceFile(source FileMeta, patches []FileMeta) error {
+// EditType edit type
+type EditType int
+
+const (
+	EditTypeAdd EditType = iota + 1
+	EditTypeDel
+	EditTypeReplace
+)
+
+// Edit edit action
+type Edit struct {
+	typ              EditType
+	beginPos, endPos int
+	content          []byte
+}
+
+// EditSlice edit slice
+type EditSlice []Edit
+
+var _ sort.Interface = (EditSlice)(nil)
+
+// Len slice length
+func (e EditSlice) Len() int {
+	return len(e)
+}
+
+// Less less than
+func (e EditSlice) Less(i, j int) bool {
+	if e[i].beginPos == e[j].beginPos {
+		return e[i].endPos < e[j].endPos
+	}
+	return e[i].beginPos < e[j].beginPos
+}
+
+// Swap swap slice elements
+func (e EditSlice) Swap(i, j int) {
+	e[i], e[j] = e[j], e[i]
+}
+
+// FileRewriter source file rewriter
+type FileRewriter struct {
+	Content []byte // original content
+	Edits   []Edit
+}
+
+// Rewrite rewrite file
+func (f *FileRewriter) Rewrite() (content []byte, err error) {
+	var buf bytes.Buffer
+	lastPos := 0
+	lastEditPos := -1
+	for _, e := range f.Edits {
+		if lastEditPos != e.beginPos {
+			buf.Write(f.Content[lastPos:e.beginPos])
+		}
+		switch e.typ {
+		case EditTypeAdd:
+			buf.Write(e.content)
+			lastPos = e.endPos
+		case EditTypeDel:
+			// just ignore
+			lastPos = e.endPos + 1
+		case EditTypeReplace:
+			buf.Write(e.content)
+			lastPos = e.endPos + 1
+		default:
+			err = fmt.Errorf("unsupported edit type %+v", e.typ)
+			return
+		}
+		lastEditPos = e.beginPos
+	}
+	buf.Write(f.Content[lastPos:])
+	content = buf.Bytes()
+	return
+}
+
+// RewriteSourceFile for every patch file, patch instrumenter func to source file ast,
+// for each patch one edition for source code is generated, both for function and imports, finally all editions
+// will be applied for this file, source file content will be merged with edited contents.
+func RewriteSourceFile(source *FileMeta, patches []FileMeta) error {
 	// collect patch funcs
 	patchFuncs := make([]*ast.FuncDecl, 0, len(patches))
 	for i := range patches {
@@ -25,6 +103,7 @@ func RewriteSourceFile(source FileMeta, patches []FileMeta) error {
 	if len(sourceFuncs) == 0 {
 		return nil
 	}
+	var edits []Edit
 	var rewriteNum int
 	for _, funcDecl := range sourceFuncs {
 		if !defaultFuncFilter(funcDecl) {
@@ -34,12 +113,26 @@ func RewriteSourceFile(source FileMeta, patches []FileMeta) error {
 		for _, patchFunc := range patchFuncs {
 			// spanName = filename - pkg.function
 			spanName := genSpanName(source.FileName, source.ASTFile.Name.Name, funcDecl)
-			rewriteSourceFunc(spanName, funcDecl, patchFunc)
+			es, err := rewriteSourceFunc(spanName, *source, funcDecl, patchFunc)
+			if err != nil {
+				return err
+			}
+			edits = append(edits, es...)
 		}
 	}
 	if rewriteNum > 0 {
 		// merge imports
-		mergeImports(source, patches)
+		es, err := mergeImports(*source, patches)
+		if err != nil {
+			return err
+		}
+		edits = append(edits, es...)
+		// sort apply edits
+		sort.Stable(EditSlice(edits))
+		rewriter := &FileRewriter{Content: source.Content, Edits: edits}
+		if source.Content, err = rewriter.Rewrite(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -66,11 +159,33 @@ func RewritePatchASTFunc(patch FileMeta) (instrumenterFuncs []*ast.FuncDecl, err
 
 // ASTToString convert ast to code
 func ASTToString(meta FileMeta) (string, error) {
-	var buf bytes.Buffer
-	if err := format.Node(&buf, meta.FSet, meta.ASTFile); err != nil {
+	buf, err := PrintAstNode(meta.ASTFile, 0)
+	if err != nil {
 		return "", err
 	}
-	return buf.String(), nil
+	return string(buf), nil
+}
+
+// PrintAstNode convert node to code
+// node: The node type must be *ast.File, *CommentedNode, []ast.Decl, []ast.Stmt,
+// or assignment-compatible to ast.Expr, ast.Decl, ast.Spec, or ast.Stmt.
+// indent: code indented by {indent} tab
+func PrintAstNode(node any, indent int) ([]byte, error) {
+	const (
+		tabWidth                = 8
+		printerNormalizeNumbers = 1 << 30
+		printerMode             = printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers
+		// printerNormalizeNumbers means to canonicalize number literal prefixes
+	)
+	var buf bytes.Buffer
+	buf.WriteByte('\n')
+	fset := token.NewFileSet()
+	var config = printer.Config{Mode: printerMode, Tabwidth: tabWidth, Indent: indent}
+	if err := config.Fprint(&buf, fset, node); err != nil {
+		return buf.Bytes(), err
+	}
+	buf.WriteByte('\n')
+	return buf.Bytes(), nil
 }
 
 func genFuncVarNameMapping(meta FileMeta, decl *ast.FuncDecl) map[string]string {
@@ -106,9 +221,12 @@ func getImportDecl(source FileMeta) *ast.GenDecl {
 	return nil
 }
 
-func mergeImports(source FileMeta, patches []FileMeta) error {
+func mergeImports(source FileMeta, patches []FileMeta) (edits []Edit, err error) {
 	type importMeta struct {
 		name, path string
+	}
+	edit := Edit{
+		typ: EditTypeReplace,
 	}
 	importsMap := make(map[importMeta]struct{})
 	sourceImportDecl := getImportDecl(source)
@@ -116,6 +234,8 @@ func mergeImports(source FileMeta, patches []FileMeta) error {
 		sourceImportDecl = &ast.GenDecl{Tok: token.IMPORT}
 		source.ASTFile.Decls = append([]ast.Decl{sourceImportDecl}, source.ASTFile.Decls...)
 	}
+	edit.beginPos = source.FSet.Position(sourceImportDecl.TokPos).Offset
+	edit.endPos = source.FSet.Position(sourceImportDecl.Rparen).Offset
 
 	putIntoMap := func(spec *ast.ImportSpec) bool {
 		var name string
@@ -145,7 +265,15 @@ func mergeImports(source FileMeta, patches []FileMeta) error {
 			}
 		}
 	}
-	return nil
+	var buf []byte
+	// imports not need indent
+	buf, err = PrintAstNode(sourceImportDecl, 0)
+	if err != nil {
+		return
+	}
+	edit.content = buf
+	edits = append(edits, edit)
+	return
 }
 
 func genSpanName(filename, pkgName string, funcDecl *ast.FuncDecl) string {
@@ -327,37 +455,52 @@ func createSourceCtxAssignStmt(source, patchFunc *ast.FuncDecl) *ast.AssignStmt 
 	return ctxAssignStmt
 }
 
-func rewriteSourceFunc(spanName string, source, patchFunc *ast.FuncDecl) error {
-	// insert init part for this patch function
+func rewriteSourceFunc(spanName string, srcMeta FileMeta,
+	sourceFunc, patchFunc *ast.FuncDecl) (edits []Edit, err error) {
+	// insert init part of this patch function into begin of source function body
+	// patch function:
+	// 	ProcessFunc(spanName string, hasCtx bool, ctx context.Context, args ...interface{})
+	// auto generated code snippet for it:
 	// 	spanNameSuffix := spanName
 	// 	if has ctx param:
 	// 		   hasCtxSuffix := true
 	// 	else hasCtxSuffix = false
 	// 	argsSuffix := []interface{}{ctx, args...}
-	// 	ProcessFunc(spanName string, hasCtx bool, ctx context.Context, args ...interface{})
-	// generate init part
 	initStmts := make([]ast.Stmt, 0, 4)
 	// always add span stmt
 	initStmts = append(initStmts, createSpanStmt(spanName, patchFunc))
 	// add hasCtxSuffix := boolean if patchFunc do not ignore this param
-	if stmt := createHasCtxDefStmt(source, patchFunc); stmt != nil {
+	if stmt := createHasCtxDefStmt(sourceFunc, patchFunc); stmt != nil {
 		initStmts = append(initStmts, stmt)
 	}
 	// add ctxSuffix := ctx if patchFunc do not ignore this param
-	if stmt := createPatchCtxDefStmt(source, patchFunc); stmt != nil {
+	if stmt := createPatchCtxDefStmt(sourceFunc, patchFunc); stmt != nil {
 		initStmts = append(initStmts, stmt)
 	}
 	// add  argsSuffix := []interface{}{ctx, args...} if patchFunc do not ignore param args
-	if stmt := createArgsDefStmt(source, patchFunc); stmt != nil {
+	if stmt := createArgsDefStmt(sourceFunc, patchFunc); stmt != nil {
 		initStmts = append(initStmts, stmt)
 	}
 	blocks := make([]ast.Stmt, 0, len(initStmts)+len(patchFunc.Body.List))
 	blocks = append(append(blocks, initStmts...), patchFunc.Body.List...)
 	// add ctx = ctxSuffix if source ctx exists and is not ignored by patchFunc, so ctx values can propagate
-	if sourceCtxStmt := createSourceCtxAssignStmt(source, patchFunc); sourceCtxStmt != nil {
+	if sourceCtxStmt := createSourceCtxAssignStmt(sourceFunc, patchFunc); sourceCtxStmt != nil {
 		blocks = append(blocks, sourceCtxStmt)
 	}
-	source.Body.List = append(append([]ast.Stmt(nil), blocks...), source.Body.List...)
-
-	return nil
+	var astBytes []byte
+	// function block stmts, indented by 1 tab
+	astBytes, err = PrintAstNode(blocks, 1)
+	if err != nil {
+		return
+	}
+	// token pos is comapacted, get exact bytes offset here
+	pos := srcMeta.FSet.Position(sourceFunc.Body.Lbrace).Offset + 1
+	edit := Edit{
+		typ:      EditTypeAdd,
+		beginPos: pos,
+		endPos:   pos,
+		content:  astBytes,
+	}
+	edits = append(edits, edit)
+	return
 }

@@ -65,7 +65,7 @@ func main() {
 				*source, e, string(sbuf))
 		}
 	}()
-	if err = instrument.RewriteSourceFile(sourceMeta, patchMetas); err != nil {
+	if err = instrument.RewriteSourceFile(&sourceMeta, patchMetas); err != nil {
 		fmt.Fprintf(os.Stderr, "rewrite source %s failed, err: %+v\n", *source, err)
 		return
 	}
@@ -79,18 +79,14 @@ func main() {
 }
 
 func saveInstrmentation(meta instrument.FileMeta, filename string) error {
-	s, err := instrument.ASTToString(meta)
-	if err != nil {
-		return fmt.Errorf("convert file %s ast failed: %w", filename, err)
-	}
 	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.ModePerm)
 	if err != nil {
 		return fmt.Errorf("open file %s failed: %w", filename, err)
 	}
 	defer f.Close()
-	if n, err := f.WriteString(s); err != nil || n != len(s) {
+	if n, err := f.Write(meta.Content); err != nil || n != len(meta.Content) {
 		return fmt.Errorf("write file %s failed: write size %d, expected size: %d, err: %w",
-			filename, n, len(s), err)
+			filename, n, len(meta.Content), err)
 	}
 	return nil
 }
