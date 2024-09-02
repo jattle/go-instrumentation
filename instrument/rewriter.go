@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/printer"
 	"go/token"
 	"sort"
 )
@@ -18,11 +17,11 @@ const (
 	EditTypeReplace
 )
 
-// Edit edit action
+// Edit edition for original binary content
 type Edit struct {
-	typ              EditType
-	beginPos, endPos int
-	content          []byte
+	OpType           EditType
+	BeginPos, EndPos int
+	Content          []byte // for add or replace op
 }
 
 // EditSlice edit slice
@@ -37,10 +36,10 @@ func (e EditSlice) Len() int {
 
 // Less less than
 func (e EditSlice) Less(i, j int) bool {
-	if e[i].beginPos == e[j].beginPos {
-		return e[i].endPos < e[j].endPos
+	if e[i].BeginPos == e[j].BeginPos {
+		return e[i].EndPos < e[j].EndPos
 	}
-	return e[i].beginPos < e[j].beginPos
+	return e[i].BeginPos < e[j].BeginPos
 }
 
 // Swap swap slice elements
@@ -60,24 +59,24 @@ func (f *FileRewriter) Rewrite() (content []byte, err error) {
 	lastPos := 0
 	lastEditPos := -1
 	for _, e := range f.Edits {
-		if lastEditPos != e.beginPos {
-			buf.Write(f.Content[lastPos:e.beginPos])
+		if lastEditPos != e.BeginPos {
+			buf.Write(f.Content[lastPos:e.BeginPos])
 		}
-		switch e.typ {
+		switch e.OpType {
 		case EditTypeAdd:
-			buf.Write(e.content)
-			lastPos = e.endPos
+			buf.Write(e.Content)
+			lastPos = e.EndPos
 		case EditTypeDel:
 			// just ignore
-			lastPos = e.endPos + 1
+			lastPos = e.EndPos + 1
 		case EditTypeReplace:
-			buf.Write(e.content)
-			lastPos = e.endPos + 1
+			buf.Write(e.Content)
+			lastPos = e.EndPos + 1
 		default:
-			err = fmt.Errorf("unsupported edit type %+v", e.typ)
+			err = fmt.Errorf("unsupported edit type %+v", e.OpType)
 			return
 		}
-		lastEditPos = e.beginPos
+		lastEditPos = e.BeginPos
 	}
 	buf.Write(f.Content[lastPos:])
 	content = buf.Bytes()
@@ -166,28 +165,6 @@ func ASTToString(meta FileMeta) (string, error) {
 	return string(buf), nil
 }
 
-// PrintAstNode convert node to code
-// node: The node type must be *ast.File, *CommentedNode, []ast.Decl, []ast.Stmt,
-// or assignment-compatible to ast.Expr, ast.Decl, ast.Spec, or ast.Stmt.
-// indent: code indented by {indent} tab
-func PrintAstNode(node any, indent int) ([]byte, error) {
-	const (
-		tabWidth                = 8
-		printerNormalizeNumbers = 1 << 30
-		printerMode             = printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers
-		// printerNormalizeNumbers means to canonicalize number literal prefixes
-	)
-	var buf bytes.Buffer
-	buf.WriteByte('\n')
-	fset := token.NewFileSet()
-	var config = printer.Config{Mode: printerMode, Tabwidth: tabWidth, Indent: indent}
-	if err := config.Fprint(&buf, fset, node); err != nil {
-		return buf.Bytes(), err
-	}
-	buf.WriteByte('\n')
-	return buf.Bytes(), nil
-}
-
 func genFuncVarNameMapping(meta FileMeta, decl *ast.FuncDecl) map[string]string {
 	vars, _ := collectFuncVars(decl)
 	varMappings := make(map[string]string)
@@ -226,7 +203,7 @@ func mergeImports(source FileMeta, patches []FileMeta) (edits []Edit, err error)
 		name, path string
 	}
 	edit := Edit{
-		typ: EditTypeReplace,
+		OpType: EditTypeReplace,
 	}
 	importsMap := make(map[importMeta]struct{})
 	sourceImportDecl := getImportDecl(source)
@@ -234,8 +211,8 @@ func mergeImports(source FileMeta, patches []FileMeta) (edits []Edit, err error)
 		sourceImportDecl = &ast.GenDecl{Tok: token.IMPORT}
 		source.ASTFile.Decls = append([]ast.Decl{sourceImportDecl}, source.ASTFile.Decls...)
 	}
-	edit.beginPos = source.FSet.Position(sourceImportDecl.TokPos).Offset
-	edit.endPos = source.FSet.Position(sourceImportDecl.Rparen).Offset
+	edit.BeginPos = source.FSet.Position(sourceImportDecl.TokPos).Offset
+	edit.EndPos = source.FSet.Position(sourceImportDecl.Rparen).Offset
 
 	putIntoMap := func(spec *ast.ImportSpec) bool {
 		var name string
@@ -271,7 +248,7 @@ func mergeImports(source FileMeta, patches []FileMeta) (edits []Edit, err error)
 	if err != nil {
 		return
 	}
-	edit.content = buf
+	edit.Content = buf
 	edits = append(edits, edit)
 	return
 }
@@ -496,10 +473,10 @@ func rewriteSourceFunc(spanName string, srcMeta FileMeta,
 	// token pos is comapacted, get exact bytes offset here
 	pos := srcMeta.FSet.Position(sourceFunc.Body.Lbrace).Offset + 1
 	edit := Edit{
-		typ:      EditTypeAdd,
-		beginPos: pos,
-		endPos:   pos,
-		content:  astBytes,
+		OpType:   EditTypeAdd,
+		BeginPos: pos,
+		EndPos:   pos,
+		Content:  astBytes,
 	}
 	edits = append(edits, edit)
 	return
