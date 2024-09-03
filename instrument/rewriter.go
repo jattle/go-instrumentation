@@ -202,11 +202,13 @@ func mergeImports(source FileMeta, patches []FileMeta) (edits []Edit, err error)
 	if sourceImportDecl == nil {
 		sourceImportDecl = &ast.GenDecl{Tok: token.IMPORT}
 		source.ASTFile.Decls = append([]ast.Decl{sourceImportDecl}, source.ASTFile.Decls...)
-		// source file has no imports, we should place auto-generated imports below package
+		// source file has no imports, we should place auto-generated imports just below package xxx
 		pkgOffset := source.FSet.Position(source.ASTFile.Name.Pos()).Offset + len(source.ASTFile.Name.Name) + 1
+		edit.OpType = EditTypeAdd
 		edit.BeginPos = pkgOffset
 		edit.EndPos = pkgOffset
 	} else {
+		// replace current imports content
 		edit.BeginPos = source.FSet.Position(sourceImportDecl.TokPos).Offset
 		edit.EndPos = source.FSet.Position(sourceImportDecl.Rparen).Offset
 	}
