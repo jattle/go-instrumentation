@@ -194,9 +194,7 @@ func mergeImports(source FileMeta, patches []FileMeta) (edits []Edit, err error)
 	type importMeta struct {
 		name, path string
 	}
-	edit := Edit{
-		OpType: EditTypeReplace,
-	}
+	edit := Edit{}
 	importsMap := make(map[importMeta]struct{})
 	sourceImportDecl := getImportDecl(source)
 	if sourceImportDecl == nil {
@@ -209,8 +207,14 @@ func mergeImports(source FileMeta, patches []FileMeta) (edits []Edit, err error)
 		edit.EndPos = pkgOffset
 	} else {
 		// replace current imports content
+		edit.OpType = EditTypeReplace
 		edit.BeginPos = source.FSet.Position(sourceImportDecl.TokPos).Offset
-		edit.EndPos = source.FSet.Position(sourceImportDecl.Rparen).Offset
+		if sourceImportDecl.Rparen != 0 {
+			edit.EndPos = source.FSet.Position(sourceImportDecl.Rparen).Offset
+		} else {
+			spec := sourceImportDecl.Specs[0].(*ast.ImportSpec)
+			edit.EndPos = source.FSet.Position(spec.Path.ValuePos).Offset + len(spec.Path.Value) + 1
+		}
 	}
 
 	putIntoMap := func(spec *ast.ImportSpec) bool {
