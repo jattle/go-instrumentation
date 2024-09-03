@@ -27,3 +27,12 @@ func PrintAstNode(node any, indent int) ([]byte, error) {
 	buf.WriteByte('\n')
 	return buf.Bytes(), nil
 }
+
+// ASTToString convert ast to code
+func ASTToString(meta FileMeta) (string, error) {
+	buf, err := PrintAstNode(meta.ASTFile, 0)
+	if err != nil {
+		return "", err
+	}
+	return string(buf), nil
+}

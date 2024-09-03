@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -39,18 +40,9 @@ func ParseFile(filename string) (meta FileMeta, err error) {
 
 // BaseName file base name not with filetype suffix, eg a/b/base.go => base
 func BaseName(filename string) string {
-	var baseName = BaseFileName(filename)
+	var baseName = path.Base(filename)
 	if i := strings.LastIndex(baseName, "."); i != -1 {
 		baseName = baseName[:i]
-	}
-	return baseName
-}
-
-// BaseFileName base file name, eg a/b/base.go => base.go
-func BaseFileName(filename string) string {
-	var baseName string = filename
-	if i := strings.LastIndex(filename, "/"); i != -1 {
-		baseName = filename[i+1:]
 	}
 	return baseName
 }
@@ -101,10 +93,6 @@ func collectFuncVars(funcDecl *ast.FuncDecl) (map[string]struct{}, error) {
 				collectNodeVars(n.Params, m)
 			}
 		}
-		//	if n.Results != nil {
-		//		collectNodeVars(n.Results, m)
-		//	}
-		//}
 		return true
 	})
 	return m, nil

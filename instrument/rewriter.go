@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"path"
 	"sort"
 )
 
@@ -156,15 +157,6 @@ func RewritePatchASTFunc(patch FileMeta) (instrumenterFuncs []*ast.FuncDecl, err
 	return
 }
 
-// ASTToString convert ast to code
-func ASTToString(meta FileMeta) (string, error) {
-	buf, err := PrintAstNode(meta.ASTFile, 0)
-	if err != nil {
-		return "", err
-	}
-	return string(buf), nil
-}
-
 func genFuncVarNameMapping(meta FileMeta, decl *ast.FuncDecl) map[string]string {
 	vars, _ := collectFuncVars(decl)
 	varMappings := make(map[string]string)
@@ -210,9 +202,14 @@ func mergeImports(source FileMeta, patches []FileMeta) (edits []Edit, err error)
 	if sourceImportDecl == nil {
 		sourceImportDecl = &ast.GenDecl{Tok: token.IMPORT}
 		source.ASTFile.Decls = append([]ast.Decl{sourceImportDecl}, source.ASTFile.Decls...)
+		// source file has no imports, we should place auto-generated imports below package
+		pkgOffset := source.FSet.Position(source.ASTFile.Name.Pos()).Offset + len(source.ASTFile.Name.Name) + 1
+		edit.BeginPos = pkgOffset
+		edit.EndPos = pkgOffset
+	} else {
+		edit.BeginPos = source.FSet.Position(sourceImportDecl.TokPos).Offset
+		edit.EndPos = source.FSet.Position(sourceImportDecl.Rparen).Offset
 	}
-	edit.BeginPos = source.FSet.Position(sourceImportDecl.TokPos).Offset
-	edit.EndPos = source.FSet.Position(sourceImportDecl.Rparen).Offset
 
 	putIntoMap := func(spec *ast.ImportSpec) bool {
 		var name string
@@ -254,14 +251,14 @@ func mergeImports(source FileMeta, patches []FileMeta) (edits []Edit, err error)
 }
 
 func genSpanName(filename, pkgName string, funcDecl *ast.FuncDecl) string {
-	return fmt.Sprintf("%s-%s.%s", BaseFileName(filename), pkgName, qualifiedFuncName(funcDecl))
+	return fmt.Sprintf("%s-%s.%s", path.Base(filename), pkgName, qualifiedFuncName(funcDecl))
 }
 
 // qualifiedFuncName extract qualified function name for function
 func qualifiedFuncName(funcDecl *ast.FuncDecl) string {
 	var (
-		prefix string = ""
-		suffix        = funcDecl.Name.Name
+		prefix string
+		suffix = funcDecl.Name.Name
 	)
 	// has receiver
 	if funcDecl.Recv != nil && len(funcDecl.Recv.List) > 0 {
@@ -434,6 +431,9 @@ func createSourceCtxAssignStmt(source, patchFunc *ast.FuncDecl) *ast.AssignStmt 
 
 func rewriteSourceFunc(spanName string, srcMeta FileMeta,
 	sourceFunc, patchFunc *ast.FuncDecl) (edits []Edit, err error) {
+	if sourceFunc.Body == nil {
+		return
+	}
 	// insert init part of this patch function into begin of source function body
 	// patch function:
 	// 	ProcessFunc(spanName string, hasCtx bool, ctx context.Context, args ...interface{})
