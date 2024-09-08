@@ -1,4 +1,4 @@
-package parser
+package astvisitor
 
 import (
 	"fmt"
@@ -34,28 +34,7 @@ func ToValidVarName(v string) string {
 	return strings.ReplaceAll(v, "_", "")
 }
 
-type varVistor struct {
-	vars []string
-}
-
-// Visit collect declared vars
-func (f *varVistor) Visit(node ast.Node) ast.Visitor {
-	switch n := node.(type) {
-	case *ast.Ident:
-		if n.Obj != nil && n.Obj.Kind == ast.Var {
-			f.vars = append(f.vars, n.Name)
-		}
-	}
-	return f
-}
-
-func addVarNames(names []string, vars map[string]struct{}) {
-	for _, n := range names {
-		vars[n] = struct{}{}
-	}
-}
-
-// CollectFuncVars collect function variable names
+// CollectFuncVars collect function params var names and function body declared var names
 func CollectFuncVars(funcDecl *ast.FuncDecl) (map[string]struct{}, error) {
 	m := make(map[string]struct{})
 	ast.Inspect(funcDecl, func(node ast.Node) bool {
@@ -78,4 +57,25 @@ func collectNodeVars(n ast.Node, m map[string]struct{}) {
 	v := varVistor{}
 	ast.Walk(&v, n)
 	addVarNames(v.vars, m)
+}
+
+func addVarNames(names []string, vars map[string]struct{}) {
+	for _, n := range names {
+		vars[n] = struct{}{}
+	}
+}
+
+type varVistor struct {
+	vars []string
+}
+
+// Visit collect declared vars
+func (f *varVistor) Visit(node ast.Node) ast.Visitor {
+	switch n := node.(type) {
+	case *ast.Ident:
+		if n.Obj != nil && n.Obj.Kind == ast.Var {
+			f.vars = append(f.vars, n.Name)
+		}
+	}
+	return f
 }

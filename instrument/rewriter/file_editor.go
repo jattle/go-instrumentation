@@ -19,7 +19,7 @@ const (
 type Edit struct {
 	OpType           EditType
 	BeginPos, EndPos int
-	Content          []byte // for add or replace op
+	Content          []byte // to apply ops
 }
 
 // EditSlice edit slice
@@ -53,6 +53,8 @@ type FileRewriter struct {
 
 // Rewrite rewrite file
 func (f *FileRewriter) Rewrite() (content []byte, err error) {
+	// sort apply edits
+	sort.Stable(EditSlice(f.Edits))
 	var buf bytes.Buffer
 	lastPos := 0
 	lastEditPos := -1

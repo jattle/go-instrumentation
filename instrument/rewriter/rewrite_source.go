@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 	"path"
-	"sort"
 
 	"github.com/jattle/go-instrumentation/instrument/filter"
 	"github.com/jattle/go-instrumentation/instrument/parser"
@@ -53,8 +52,6 @@ func RewriteSourceFile(source *parser.FileMeta, patches []parser.FileMeta) error
 			return err
 		}
 		edits = append(edits, es...)
-		// sort apply edits
-		sort.Stable(EditSlice(edits))
 		rewriter := &FileRewriter{Content: source.Content, Edits: edits}
 		if source.Content, err = rewriter.Rewrite(); err != nil {
 			return err

@@ -45,7 +45,7 @@ func rewriteSourceFunc(spanName string, srcMeta parser.FileMeta,
 	}
 	var astBytes []byte
 	// function block stmts, indented by 1 tab
-	// NOTE: comments in patchFunc would be dropped after printing ast node
+	// NOTE: comments in patchFunc would be dropped when printing ast node
 	astBytes, err = printer.PrintAstNode(blocks, 1)
 	if err != nil {
 		return

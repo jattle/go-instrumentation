@@ -6,6 +6,7 @@ import (
 
 	"github.com/jattle/go-instrumentation/instrument/filter"
 	"github.com/jattle/go-instrumentation/instrument/parser"
+	"github.com/jattle/go-instrumentation/internal/instrument/astvisitor"
 )
 
 // RewritePatchASTFunc rewrite patch file ast, mainly replace local vars, function args, names return vars
@@ -25,9 +26,9 @@ func RewritePatchASTFunc(patch parser.FileMeta) (instrumenterFuncs []*ast.FuncDe
 }
 
 func genFuncVarNameMapping(meta parser.FileMeta, decl *ast.FuncDecl) map[string]string {
-	vars, _ := parser.CollectFuncVars(decl)
+	vars, _ := astvisitor.CollectFuncVars(decl)
 	varMappings := make(map[string]string)
-	suffix := parser.GenVarSuffix(meta.FileName)
+	suffix := astvisitor.GenVarSuffix(meta.FileName)
 	for k := range vars {
 		varMappings[k] = k + suffix
 	}

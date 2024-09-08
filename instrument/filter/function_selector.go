@@ -13,12 +13,11 @@ var (
 	FuncNameExcludeExpr *regexp.Regexp
 	filters             = []FuncFilter{negateFunc(excludeCommentFilter), negateFunc(funcNameExcludeFilter)}
 	defaultFuncFilter   = filterBundle(filters).matchSourceFunc
+	// DefaultFuncFilter get unified function filter to select func
+	DefaultFuncFilter = func() FuncFilter {
+		return defaultFuncFilter
+	}
 )
-
-// DefaultFuncFilter get unified function filter to select func
-func DefaultFuncFilter() FuncFilter {
-	return defaultFuncFilter
-}
 
 type filterBundle []FuncFilter
 
