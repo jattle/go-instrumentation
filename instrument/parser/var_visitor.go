@@ -1,44 +1,19 @@
-package instrument
+package parser
 
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
 	"path"
 	"strings"
 	"sync/atomic"
 	"time"
 )
 
-// FileMeta file meta
-type FileMeta struct {
-	FileName string
-	FSet     *token.FileSet
-	ASTFile  *ast.File
-	Content  []byte
-}
-
 var (
 	varCounter = atomic.Int32{}
 )
 
-// ParseFile parse go source file
-func ParseFile(filename string) (meta FileMeta, err error) {
-	meta.FileName = filename
-	meta.FSet = token.NewFileSet()
-	if meta.ASTFile, err = parser.ParseFile(meta.FSet, filename, nil, parser.ParseComments); err != nil {
-		err = fmt.Errorf("parse file %s failed: %w", filename, err)
-		return
-	}
-	if meta.Content, err = os.ReadFile(filename); err != nil {
-		err = fmt.Errorf("read file %s failed: %w", filename, err)
-	}
-	return
-}
-
-// BaseName file base name not with filetype suffix, eg a/b/base.go => base
+// BaseName file base name without filetype suffix, eg a/b/base.go => base
 func BaseName(filename string) string {
 	var baseName = path.Base(filename)
 	if i := strings.LastIndex(baseName, "."); i != -1 {
@@ -80,7 +55,8 @@ func addVarNames(names []string, vars map[string]struct{}) {
 	}
 }
 
-func collectFuncVars(funcDecl *ast.FuncDecl) (map[string]struct{}, error) {
+// CollectFuncVars collect function variable names
+func CollectFuncVars(funcDecl *ast.FuncDecl) (map[string]struct{}, error) {
 	m := make(map[string]struct{})
 	ast.Inspect(funcDecl, func(node ast.Node) bool {
 		switch n := node.(type) {

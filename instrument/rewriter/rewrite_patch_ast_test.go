@@ -1,20 +1,22 @@
-package instrument
+package rewriter
 
 import (
 	"go/ast"
 	"testing"
 
+	"github.com/jattle/go-instrumentation/instrument/filter"
+	"github.com/jattle/go-instrumentation/instrument/parser"
 	"gotest.tools/assert"
 )
 
-func getFuncByName(name string) FuncFilter {
+func getFuncByName(name string) filter.FuncFilter {
 	return func(decl *ast.FuncDecl) bool {
 		return decl.Name.Name == name
 	}
 }
 
 func TestRewritePatchASTFunc(t *testing.T) {
-	meta, err := ParseFile("../demo/example.go")
+	meta, err := parser.ParseFile("../../demo/example.go")
 	if err != nil {
 		t.Error(err)
 		return
@@ -35,7 +37,7 @@ func TestRewritePatchASTFunc(t *testing.T) {
 	assert.Assert(t, param4 != "args")
 
 	// params of parseFunc1 was not modified
-	funcs := SelectFuncDecls(meta.ASTFile.Decls, getFuncByName("parseFunc1"))
+	funcs := filter.SelectFuncDecls(meta.ASTFile.Decls, getFuncByName("parseFunc1"))
 	assert.Equal(t, len(funcs), 1)
 	param1 = funcs[0].Type.Params.List[0].Names[0].Name
 	param2 = funcs[0].Type.Params.List[0].Names[1].Name

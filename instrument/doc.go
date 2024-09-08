@@ -1,3 +1,6 @@
+// Package instrument rewrite source file via applying patch functions to source functions, and merge file import paths.
+// provide instrumentation patch function of specified signature below, and simply execute instrumentation tool,
+// input source file will be rewritten.
 package instrument
 
 //import (

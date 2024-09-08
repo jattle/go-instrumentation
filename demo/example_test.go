@@ -11,7 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jattle/go-instrumentation/instrument"
+	iparser "github.com/jattle/go-instrumentation/instrument/parser"
+	"github.com/jattle/go-instrumentation/instrument/rewriter"
 )
 
 type foo struct {
@@ -103,12 +104,12 @@ func ExampleFprint() {
 }
 
 func TestModFunc(t *testing.T) {
-	meta, err := instrument.ParseFile("example.go")
+	meta, err := iparser.ParseFile("example.go")
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	_, err = instrument.RewritePatchASTFunc(meta)
+	_, err = rewriter.RewritePatchASTFunc(meta)
 	if err != nil {
 		fmt.Println(err)
 	}

@@ -1,9 +1,11 @@
-package instrument
+package printer
 
 import (
 	"bytes"
 	"go/printer"
 	"go/token"
+
+	"github.com/jattle/go-instrumentation/instrument/parser"
 )
 
 // PrintAstNode convert node to code
@@ -28,8 +30,22 @@ func PrintAstNode(node any, indent int) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// PrintAstNodes print node array, T is node type suitable for PrintAsNode
+func PrintAstNodes[T any](nodes []T, indent int) ([]byte, error) {
+	buf := bytes.Buffer{}
+	for _, n := range nodes {
+		b, err := PrintAstNode(n, indent)
+		if err != nil {
+			return nil, err
+		}
+		// ignore leading char '\n'
+		buf.Write(b[1:])
+	}
+	return buf.Bytes(), nil
+}
+
 // ASTToString convert ast to code
-func ASTToString(meta FileMeta) (string, error) {
+func ASTToString(meta parser.FileMeta) (string, error) {
 	buf, err := PrintAstNode(meta.ASTFile, 0)
 	if err != nil {
 		return "", err

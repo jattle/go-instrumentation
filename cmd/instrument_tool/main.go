@@ -8,7 +8,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/jattle/go-instrumentation/instrument"
+	"github.com/jattle/go-instrumentation/instrument/filter"
+	"github.com/jattle/go-instrumentation/instrument/parser"
+	"github.com/jattle/go-instrumentation/instrument/rewriter"
 )
 
 var (
@@ -38,19 +40,19 @@ func main() {
 		return
 	}
 	if *funcExcludeExpr != "" {
-		instrument.FuncNameExcludeExpr = regexp.MustCompile(*funcExcludeExpr)
+		filter.FuncNameExcludeExpr = regexp.MustCompile(*funcExcludeExpr)
 	}
 	// parse source file
-	sourceMeta, err := instrument.ParseFile(*source)
+	sourceMeta, err := parser.ParseFile(*source)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parse source %s failed, err: %+v\n", *source, err)
 		return
 	}
 	// parse patches
 	patchFiles := strings.Split(*patches, ",")
-	patchMetas := make([]instrument.FileMeta, 0, len(patchFiles))
+	patchMetas := make([]parser.FileMeta, 0, len(patchFiles))
 	for _, f := range patchFiles {
-		meta, err := instrument.ParseFile(f)
+		meta, err := parser.ParseFile(f)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "parse patch %s, failed, err: %+v\n", f, err)
 			continue
@@ -65,7 +67,7 @@ func main() {
 				*source, e, string(sbuf))
 		}
 	}()
-	if err = instrument.RewriteSourceFile(&sourceMeta, patchMetas); err != nil {
+	if err = rewriter.RewriteSourceFile(&sourceMeta, patchMetas); err != nil {
 		fmt.Fprintf(os.Stderr, "rewrite source %s failed, err: %+v\n", *source, err)
 		return
 	}
@@ -78,8 +80,8 @@ func main() {
 	}
 }
 
-func saveInstrmentation(meta instrument.FileMeta, filename string) error {
-	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.ModePerm)
+func saveInstrmentation(meta parser.FileMeta, filename string) error {
+	f, err := os.Create(filename)
 	if err != nil {
 		return fmt.Errorf("open file %s failed: %w", filename, err)
 	}

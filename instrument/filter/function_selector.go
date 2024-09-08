@@ -1,4 +1,4 @@
-package instrument
+package filter
 
 import (
 	"go/ast"
